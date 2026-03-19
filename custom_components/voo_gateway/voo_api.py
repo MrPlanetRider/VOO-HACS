@@ -1,5 +1,6 @@
 """VOO Gateway API client."""
 
+import asyncio
 import hashlib
 import time
 import logging
@@ -182,6 +183,8 @@ class VooApi:
 
                 return response.get("data", {})
 
+        except asyncio.TimeoutError:
+            raise VooApiError("Request timed out")
         except aiohttp.ClientError as e:
             raise VooApiError(f"Request failed: {e}")
 
