@@ -1,10 +1,8 @@
 # VOO HACS
 
-![GitHub Release (latest by date)](https://img.shields.io/github/v/release/your-github-username/VOO-HACS)
-![GitHub](https://img.shields.io/github/license/your-github-username/VOO-HACS)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/your-github-username/VOO-HACS/test.yml)
+Home Assistant integration for VOO Gateway (Technicolor CGA4233VOO C0A4233VOO) modem/router manufactured for VOO (Belgian ISP).
 
-Home Assistant integration for VOO Gateway (Technicolor CGA4233VOO) modem manufactured for VOO (Belgian ISP).
+This custom integration provides local LAN access to your modem's status and network information via its REST API.
 
 ## Features
 
@@ -22,24 +20,34 @@ Home Assistant integration for VOO Gateway (Technicolor CGA4233VOO) modem manufa
 1. Add the following custom repository to HACS:
    - URL: `https://github.com/your-github-username/VOO-HACS`
    - Category: `Integration`
+username/VOO-HACS`
+   - Category: `Integration`
 
 2. Search for "VOO Gateway" in HACS and install it
 
 3. Restart Home Assistant
 
-### Manual Installation
+### Quick Setup
+
+Once installed:
+1. Go to **Settings → Devices & Services → Create Integration**
+2. Select **VOO Gateway**
+3. Enter your router credentials from the device label
+4. Click **Create**
 
 1. Clone or download this repository
 2. Copy the `custom_components/voo_gateway` folder to your Home Assistant `custom_components` folder
 3. Restart Home Assistant
 
-## Configuration
+## CRouter Credentials
 
-1. Go to **Settings → Devices & Services → Create Integration**
-2. Search for **VOO Gateway**
-3. Enter your router IP address, username, and password
-4. Click **Create**
-5. (Optional) Configure the scan interval in the integration options
+Your router credentials are printed on the device label on the back of the modem:
+
+- **IP Address**: `192.168.0.1` (factory default)
+- **Username**: Usually "user" (some models use "voo")
+- **Password**: Custom password from your device label
+
+**Note**: Do not use the ISP admin interface credentials; use the credentials from your device sticker. in the integration options
 
 ### Default Credentials
 
@@ -69,9 +77,11 @@ Your VOO router uses the credentials printed on the device label:
 - **Connected Devices**: Number of devices currently connected
 - **Modem Status**: Whether modem is online (binary sensor)
 
-## Supported Devices
+## Supported Devices (Model C0A4233VOO): ✅ Confirmed working
+- **Technicolor CGA4233-EU variants**: Should work
+- **Other Technicolor CGA models**: May work with similar firmware/API
 
-- **Technicolor CGA4233VOO**: Confirmed working
+If you have a different modem model and it works, please let us know!
 - **Technicolor CGA4233-EU variants**: Should work (untested)
 - **Other Technicolor CGA models**: May work depending on firmware
 
@@ -103,17 +113,41 @@ cd VOO-HACS
 ### Testing
 
 Place the integration in your Home Assistant `custom_components` folder and test via the UI.
-
-### Code Structure
-
+VOO-HACS/
+├── custom_components/voo_gateway/
+│   ├── __init__.py              # Integration setup & entry points
+│   ├── config_flow.py           # Configuration UI
+│   ├── const.py                 # Constants & API endpoints
+│   ├── coordinator.py           # Data coordinator
+│   ├── voo_api.py              # API client (PBKDF2 auth)
+│   ├── sensor.py               # Sensor entities
+│   ├── binary_sensor.py        # Binary sensor entities
+│   ├── manifest.json           # Integration metadata
+│   └── strings.json            # UI strings & translations
+├── hacs.json                    # HACS manifest
+├── README.md                    # Documentation
+├── LICENSE                      # Apache 2.0 License
+└── .gitignore                   # Git ignore rules
 ```
-custom_components/voo_gateway/
-├── __init__.py              # Integration setup
-├── config_flow.py           # Config UI
-├── const.py                 # Constants
-├── coordinator.py           # Data coordinator
-├── voo_api.py              # API client
-├── sensor.py               # Sensor entities
+
+### How the API Client Works
+
+1. **2-Step PBKDF2 Authentication**:
+   - First request: Get salt values from gateway
+   - Hash password using PBKDF2-SHA256(password, salt1, 1000 iterations)
+   - Hash result again with salt2
+   - Submit hashed password for authentication
+
+2. **Session Management**:
+   - All requests use session cookies
+   - CSRF token stored in request headers
+
+3. **Data Endpoints**:
+   - `/api/v1/system/*` - System & modem info
+   - `/api/v1/dhcp/v4/1/*` - Network configuration
+   - `/api/v1/host/*` - Connected devices
+   - `/api/v1/wifi/*` - WiFi status
+   - `/api/v1/modem/*` - DOCSIS modem info sensor.py               # Sensor entities
 ├── binary_sensor.py        # Binary sensor entities
 ├── manifest.json           # Integration metadata
 └── strings.json            # UI strings
