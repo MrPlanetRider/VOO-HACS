@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any
+
+_IPV4_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+_MAC_PATTERN = re.compile(r"^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$")
 
 
 def _first_defined(entry: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -15,9 +19,76 @@ def _first_defined(entry: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
-def normalize_host_entry(entry: dict[str, Any], source_index: int | None = None) -> dict[str, Any]:
-    """Normalize a host table entry to a stable structure."""
-    host_name = _first_defined(
+def _normalize_str(value: Any) -> str | None:
+    """Normalize any value to stripped string or None."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _find_ip_address(entry: dict[str, Any]) -> str | None:
+    """Find IPv4 value from known keys or heuristic scan."""
+    direct = _first_defined(
+        entry,
+        (
+            "IPAddress",
+            "ip",
+            "IP",
+            "ipaddr",
+            "ipAddress",
+            "IPv4Address",
+            "HostIPAddress",
+            "Addr",
+            "address",
+        ),
+    )
+    text = _normalize_str(direct)
+    if text and _IPV4_PATTERN.match(text):
+        return text
+
+    for key, value in entry.items():
+        key_l = str(key).lower()
+        if "ip" not in key_l and "addr" not in key_l:
+            continue
+        text = _normalize_str(value)
+        if text and _IPV4_PATTERN.match(text):
+            return text
+    return None
+
+
+def _find_mac_address(entry: dict[str, Any]) -> str | None:
+    """Find MAC value from known keys or heuristic scan."""
+    direct = _first_defined(
+        entry,
+        (
+            "MACAddress",
+            "mac",
+            "MacAddress",
+            "PhysAddress",
+            "macAddress",
+            "MAC",
+            "physAddress",
+            "HWAddress",
+        ),
+    )
+    text = _normalize_str(direct)
+    if text and _MAC_PATTERN.match(text.replace("-", ":")):
+        return text
+
+    for key, value in entry.items():
+        key_l = str(key).lower()
+        if "mac" not in key_l and "phys" not in key_l and "hw" not in key_l:
+            continue
+        text = _normalize_str(value)
+        if text and _MAC_PATTERN.match(text.replace("-", ":")):
+            return text
+    return None
+
+
+def _find_host_name(entry: dict[str, Any]) -> str:
+    """Find best host display name from known keys or heuristic scan."""
+    direct = _first_defined(
         entry,
         (
             "HostName",
@@ -28,33 +99,28 @@ def normalize_host_entry(entry: dict[str, Any], source_index: int | None = None)
             "host",
         ),
     )
-    if host_name is None:
-        host_name = "Unknown"
+    text = _normalize_str(direct)
+    if text:
+        return text
 
-    ip_address = _first_defined(
-        entry,
-        (
-            "IPAddress",
-            "ip",
-            "IP",
-            "ipaddr",
-            "ipAddress",
-            "IPv4Address",
-            "HostIPAddress",
-        ),
-    )
-    mac_address = _first_defined(
-        entry,
-        (
-            "MACAddress",
-            "mac",
-            "MacAddress",
-            "PhysAddress",
-            "macAddress",
-            "MAC",
-            "physAddress",
-        ),
-    )
+    for key, value in entry.items():
+        key_l = str(key).lower()
+        if not any(token in key_l for token in ("name", "host", "device")):
+            continue
+        if any(token in key_l for token in ("interface", "status", "type")):
+            continue
+        text = _normalize_str(value)
+        if text:
+            return text
+
+    return "Unknown"
+
+
+def normalize_host_entry(entry: dict[str, Any], source_index: int | None = None) -> dict[str, Any]:
+    """Normalize a host table entry to a stable structure."""
+    host_name = _find_host_name(entry)
+    ip_address = _find_ip_address(entry)
+    mac_address = _find_mac_address(entry)
     interface = _first_defined(
         entry,
         (
