@@ -32,14 +32,16 @@ async def async_setup_entry(
     ]
 
     known_ids: set[str] = set()
+    known_clients: dict[str, dict[str, Any]] = {}
 
     @callback
     def _add_new_client_entities() -> None:
         data = coordinator.data or {}
         clients = normalized_hosts(data.get("host", {}))
         _LOGGER.debug(
-            "Device tracker discovery: found %d clients from coordinator",
+            "Device tracker discovery: found %d clients from coordinator (entry_id=%s)",
             len(clients),
+            entry.entry_id,
         )
 
         new_entities: list[VooGatewayClientTracker] = []
@@ -51,9 +53,12 @@ async def async_setup_entry(
                 _LOGGER.debug("No stable ID for client %s, using fallback: %s", client, client_id)
             
             if client_id in known_ids:
+                # Update cached client data for existing trackers
+                known_clients[client_id] = client
                 continue
             
             known_ids.add(client_id)
+            known_clients[client_id] = client
             entity = VooGatewayClientTracker(
                 coordinator=coordinator,
                 entry=entry,
@@ -61,8 +66,8 @@ async def async_setup_entry(
                 client_data=client,
             )
             new_entities.append(entity)
-            _LOGGER.debug(
-                "Creating device tracker for %s (name=%s, mac=%s, ip=%s)",
+            _LOGGER.info(
+                "Creating device tracker %s: name=%s, mac=%s, ip=%s",
                 client_id,
                 client.get("name"),
                 client.get("mac_address"),
@@ -70,10 +75,14 @@ async def async_setup_entry(
             )
 
         if new_entities:
-            _LOGGER.debug("Adding %d new device tracker entities", len(new_entities))
+            _LOGGER.info("Adding %d new device tracker entities", len(new_entities))
             async_add_entities(new_entities)
         else:
-            _LOGGER.debug("No new device tracker entities to add")
+            if not known_ids:
+                _LOGGER.warning(
+                    "No device tracker entities created - coordinator returned %d clients",
+                    len(clients),
+                )
 
     _add_new_client_entities()
     entry.async_on_unload(coordinator.async_add_listener(_add_new_client_entities))
@@ -102,14 +111,20 @@ class VooGatewayClientTracker(
 
     def _current_client(self) -> dict[str, Any] | None:
         """Return latest normalized client data for this tracker."""
+        # Try to find in current coordinator data first
         data = self.coordinator.data or {}
         clients = normalized_hosts(data.get("host", {}))
         for client in clients:
             if stable_client_id(client) == self.client_id:
+                self._cached_client_data = client
                 return client
         
-        # Fallback: if no match found, return cached data if available
+        # Fallback to cached data if no match found
         if self._cached_client_data:
+            _LOGGER.debug(
+                "Using cached client data for %s (no match in current coordinator data)",
+                self.client_id,
+            )
             return self._cached_client_data
         
         return None
@@ -130,19 +145,27 @@ class VooGatewayClientTracker(
     def name(self) -> str:
         """Return the display name of this client."""
         client = self._current_client()
-        if client and client.get("name") and str(client.get("name")).strip():
-            return str(client["name"]).strip()
         
-        # Fallback: use IP or MAC if name is not available
-        if client:
-            ip = client.get("ip_address")
+        # Try hostname first
+        if client and client.get("name"):
+            name_str = str(client.get("name")).strip()
+            if name_str:
+                return name_str
+        
+        # Try IP address
+        if client and client.get("ip_address"):
+            ip = str(client.get("ip_address")).strip()
             if ip:
                 return f"Device {ip}"
-            mac = client.get("mac_address")
+        
+        # Try MAC address
+        if client and client.get("mac_address"):
+            mac = str(client.get("mac_address")).strip()
             if mac:
                 return f"Device {mac}"
         
-        return f"LAN Client {self.client_id.replace('_', ' ')}"
+        # Use client_id as last resort
+        return str(self.client_id).replace("_", " ").title()
 
     @property
     def mac_address(self) -> str | None:
@@ -186,15 +209,61 @@ class VooGatewayClientTracker(
     @property
     def device_info(self) -> DeviceInfo:
         """Return device registry information for this tracked client."""
-        client = self._current_client() or {}
-        mac = client.get("mac_address")
-        client_name = client.get("name") or self.name
+        client = self._current_client()
+        
+        # Build device identifiers and connections
+        identifiers = {(DOMAIN, f"{self.entry.entry_id}_client_{self.client_id}")}
+        connections: set[tuple[str, str]] = set()
+        
+        if client:
+            mac = client.get("mac_address")
+            if mac:
+                connections.add((dr.CONNECTION_NETWORK_MAC, str(mac)))
+        
+        # Determine device name with multiple fallbacks
+        device_name = None
+        if client:
+            # Try hostname first
+            if client.get("name"):
+                name_candidate = str(client.get("name")).strip()
+                if name_candidate:
+                    device_name = name_candidate
+            
+            # Try IP if no hostname
+            if not device_name and client.get("ip_address"):
+                ip = str(client.get("ip_address")).strip()
+                if ip:
+                    device_name = f"Device {ip}"
+            
+            # Try MAC if no IP
+            if not device_name and client.get("mac_address"):
+                mac = str(client.get("mac_address")).strip()
+                if mac:
+                    device_name = f"Device {mac}"
+        
+        # Last resort fallback using client_id
+        if not device_name:
+            device_name = str(self.client_id).replace("_", " ").title()
+            _LOGGER.warning(
+                "Device tracker %s has no client data; using fallback name: %s",
+                self.client_id,
+                device_name,
+            )
 
         info: DeviceInfo = {
-            "identifiers": {(DOMAIN, f"{self.entry.entry_id}_client_{self.client_id}")},
-            "name": str(client_name).strip() if client_name else "Unknown Device",
+            "identifiers": identifiers,
+            "name": device_name or "Unknown Device",
             "via_device": (DOMAIN, self.entry.entry_id),
         }
-        if mac:
-            info["connections"] = {(dr.CONNECTION_NETWORK_MAC, str(mac))}
+        if connections:
+            info["connections"] = connections
+        
+        _LOGGER.debug(
+            "Device info for %s: name=%s, mac=%s, via_device=%s",
+            self.client_id,
+            device_name,
+            next((c[1] for c in connections if c[0] == dr.CONNECTION_NETWORK_MAC), None),
+            self.entry.entry_id,
+        )
+        
         return info
