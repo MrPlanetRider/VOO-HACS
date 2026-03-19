@@ -18,7 +18,7 @@ This custom integration provides local LAN access to your modem's status and net
 ### Via HACS (Recommended)
 
 1. Add the following custom repository to HACS:
-   - URL: `https://github.com/your-github-username/VOO-HACS`
+   - URL: `https://github.com/MrPlanetRider/VOO-HACS`
    - Category: `Integration`
 username/VOO-HACS`
    - Category: `Integration`
@@ -106,7 +106,7 @@ This is purely **read-only** - no configuration changes are made to your router.
 ### Setup
 
 ```bash
-git clone https://github.com/your-github-username/VOO-HACS.git
+git clone https://github.com/MrPlanetRider/VOO-HACS.git
 cd VOO-HACS
 ```
 
@@ -187,5 +187,5 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 **Need Help?**
 
-- Check the [Issues](https://github.com/your-github-username/VOO-HACS/issues) page
+- Check the [Issues](https://github.com/MrPlanetRider/VOO-HACS/issues) page
 - Visit the [Home Assistant Community](https://community.home-assistant.io)
