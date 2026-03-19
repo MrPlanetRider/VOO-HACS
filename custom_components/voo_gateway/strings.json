@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "VOO Gateway Configuration",
+        "description": "Enter your VOO Gateway credentials",
+        "data": {
+          "host": "Router IP Address (e.g. 192.168.0.1)",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to gateway",
+      "invalid_auth": "Invalid username or password"
+    },
+    "abort": {
+      "already_configured": "Gateway is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "VOO Gateway Options",
+        "data": {
+          "scan_interval": "Update interval (seconds)"
+        }
+      }
+    }
+  }
+}

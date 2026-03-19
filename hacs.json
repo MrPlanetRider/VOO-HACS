@@ -1,0 +1,12 @@
+{
+  "name": "VOO Gateway",
+  "content_in_root": false,
+  "domains": [
+    "sensor",
+    "binary_sensor"
+  ],
+  "homeassistant": "2024.1.0",
+  "iot_class": "local_polling",
+  "requirements": "0.1.0",
+  "version": "0.1.0"
+}
