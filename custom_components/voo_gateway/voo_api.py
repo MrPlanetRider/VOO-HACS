@@ -188,6 +188,13 @@ class VooApi:
 
                 return response.get("data", {})
 
+        except asyncio.CancelledError as err:
+            # Keep real task cancellation behavior (shutdown/reload), but
+            # normalize transport-level cancellations into API errors.
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            raise VooApiError("Request was cancelled") from err
         except asyncio.TimeoutError:
             raise VooApiError("Request timed out")
         except aiohttp.ClientError as e:
