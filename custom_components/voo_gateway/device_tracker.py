@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.device_tracker import SourceType
@@ -16,6 +17,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import VooGatewayDataUpdateCoordinator
 from .lan_clients import normalized_hosts, stable_client_id
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -34,23 +37,43 @@ async def async_setup_entry(
     def _add_new_client_entities() -> None:
         data = coordinator.data or {}
         clients = normalized_hosts(data.get("host", {}))
+        _LOGGER.debug(
+            "Device tracker discovery: found %d clients from coordinator",
+            len(clients),
+        )
 
         new_entities: list[VooGatewayClientTracker] = []
-        for client in clients:
+        for idx, client in enumerate(clients):
             client_id = stable_client_id(client)
-            if not client_id or client_id in known_ids:
+            if not client_id:
+                # Fallback: create ID from index if stable_client_id fails
+                client_id = f"client_{idx}"
+                _LOGGER.debug("No stable ID for client %s, using fallback: %s", client, client_id)
+            
+            if client_id in known_ids:
                 continue
+            
             known_ids.add(client_id)
-            new_entities.append(
-                VooGatewayClientTracker(
-                    coordinator=coordinator,
-                    entry=entry,
-                    client_id=client_id,
-                )
+            entity = VooGatewayClientTracker(
+                coordinator=coordinator,
+                entry=entry,
+                client_id=client_id,
+                client_data=client,
+            )
+            new_entities.append(entity)
+            _LOGGER.debug(
+                "Creating device tracker for %s (name=%s, mac=%s, ip=%s)",
+                client_id,
+                client.get("name"),
+                client.get("mac_address"),
+                client.get("ip_address"),
             )
 
         if new_entities:
+            _LOGGER.debug("Adding %d new device tracker entities", len(new_entities))
             async_add_entities(new_entities)
+        else:
+            _LOGGER.debug("No new device tracker entities to add")
 
     _add_new_client_entities()
     entry.async_on_unload(coordinator.async_add_listener(_add_new_client_entities))
@@ -68,12 +91,14 @@ class VooGatewayClientTracker(
         coordinator: VooGatewayDataUpdateCoordinator,
         entry: ConfigEntry,
         client_id: str,
+        client_data: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the tracker entity."""
         super().__init__(coordinator)
         self.entry = entry
         self.client_id = client_id
         self._attr_unique_id = f"{entry.entry_id}_client_{client_id}"
+        self._cached_client_data = client_data or {}
 
     def _current_client(self) -> dict[str, Any] | None:
         """Return latest normalized client data for this tracker."""
@@ -82,6 +107,11 @@ class VooGatewayClientTracker(
         for client in clients:
             if stable_client_id(client) == self.client_id:
                 return client
+        
+        # Fallback: if no match found, return cached data if available
+        if self._cached_client_data:
+            return self._cached_client_data
+        
         return None
 
     @property
@@ -100,8 +130,18 @@ class VooGatewayClientTracker(
     def name(self) -> str:
         """Return the display name of this client."""
         client = self._current_client()
-        if client and client.get("name"):
-            return str(client["name"])
+        if client and client.get("name") and str(client.get("name")).strip():
+            return str(client["name"]).strip()
+        
+        # Fallback: use IP or MAC if name is not available
+        if client:
+            ip = client.get("ip_address")
+            if ip:
+                return f"Device {ip}"
+            mac = client.get("mac_address")
+            if mac:
+                return f"Device {mac}"
+        
         return f"LAN Client {self.client_id.replace('_', ' ')}"
 
     @property
@@ -148,10 +188,11 @@ class VooGatewayClientTracker(
         """Return device registry information for this tracked client."""
         client = self._current_client() or {}
         mac = client.get("mac_address")
+        client_name = client.get("name") or self.name
 
         info: DeviceInfo = {
             "identifiers": {(DOMAIN, f"{self.entry.entry_id}_client_{self.client_id}")},
-            "name": str(client.get("name") or self.name),
+            "name": str(client_name).strip() if client_name else "Unknown Device",
             "via_device": (DOMAIN, self.entry.entry_id),
         }
         if mac:
