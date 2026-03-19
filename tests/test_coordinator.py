@@ -32,8 +32,9 @@ async def test_coordinator_init(mock_hass, mock_entry):
     mock_api = MagicMock()
     coordinator = VooGatewayDataUpdateCoordinator(
         mock_hass,
+        mock_entry,
         mock_api,
-        scan_interval=300
+        scan_interval=300,
     )
     
     assert coordinator.api is mock_api
@@ -65,8 +66,9 @@ async def test_coordinator_async_config_entry_first_refresh(mock_hass, mock_entr
     
     coordinator = VooGatewayDataUpdateCoordinator(
         mock_hass,
+        mock_entry,
         mock_api,
-        scan_interval=300
+        scan_interval=300,
     )
     
     data = await coordinator._async_update_data()
@@ -89,8 +91,9 @@ async def test_coordinator_update_error_handling(mock_hass, mock_entry):
     
     coordinator = VooGatewayDataUpdateCoordinator(
         mock_hass,
+        mock_entry,
         mock_api,
-        scan_interval=300
+        scan_interval=300,
     )
     
     # The coordinator should handle errors gracefully by returning data with empty dicts
@@ -126,8 +129,9 @@ async def test_coordinator_data_structure(mock_hass, mock_entry):
     
     coordinator = VooGatewayDataUpdateCoordinator(
         mock_hass,
+        mock_entry,
         mock_api,
-        scan_interval=300
+        scan_interval=300,
     )
     
     data = await coordinator._async_update_data()

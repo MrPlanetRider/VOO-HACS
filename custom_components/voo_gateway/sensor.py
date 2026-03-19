@@ -1,91 +1,44 @@
 """Sensors for VOO Gateway."""
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import VooGatewayDataUpdateCoordinator
+from .lan_clients import normalized_hosts
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _normalize_host_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a host table entry to a stable structure."""
-    host_name = (
-        entry.get("HostName")
-        or entry.get("hostName")
-        or entry.get("Hostname")
-        or "Unknown"
-    )
-    ip_address = (
-        entry.get("IPAddress")
-        or entry.get("ip")
-        or entry.get("IP")
-        or entry.get("ipaddr")
-    )
-    mac_address = (
-        entry.get("MACAddress")
-        or entry.get("mac")
-        or entry.get("MacAddress")
-        or entry.get("PhysAddress")
-    )
-    interface = (
-        entry.get("Interface")
-        or entry.get("associateddevice")
-        or entry.get("AssociatedDevice")
-        or entry.get("connection")
-        or "unknown"
-    )
-    active = entry.get("Active")
-    if isinstance(active, str):
-        active = active.strip().lower() in {"true", "1", "yes", "up", "active"}
-    elif isinstance(active, bool):
-        active = active
-    else:
-        active = None
-
-    interface_str = str(interface).lower()
-    if any(token in interface_str for token in ("wifi", "wlan", "wireless")):
-        connection_type = "wireless"
-    elif any(token in interface_str for token in ("ethernet", "eth", "lan")):
-        connection_type = "wired"
-    else:
-        connection_type = "unknown"
-
-    return {
-        "name": host_name,
-        "ip_address": ip_address,
-        "mac_address": mac_address,
-        "interface": interface,
-        "connection_type": connection_type,
-        "active": active,
-    }
+def _parse_float(value: Any) -> float | None:
+    """Parse numeric value from raw API field."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"-?\d+(?:\.\d+)?", value)
+        if match:
+            try:
+                return float(match.group(0))
+            except ValueError:
+                return None
+    return None
 
 
-def _normalized_hosts(host_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return normalized host list from host API data."""
-    host_tbl = host_data.get("hostTbl", [])
-    if not isinstance(host_tbl, list):
-        return []
-    normalized = [
-        _normalize_host_entry(item)
-        for item in host_tbl
-        if isinstance(item, dict)
-    ]
-    return sorted(
-        normalized,
-        key=lambda x: (
-            str(x.get("name") or "").lower(),
-            str(x.get("ip_address") or ""),
-        ),
-    )
+def _first_defined(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    """Return the first non-None value for a list of keys."""
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None:
+            return value
+    return None
 
 
 SENSOR_DESCRIPTIONS = [
@@ -160,6 +113,40 @@ SENSOR_DESCRIPTIONS = [
         name="Connected Active Devices",
         icon="mdi:check-network",
     ),
+    SensorEntityDescription(
+        key="cpu_usage",
+        name="CPU Usage",
+        native_unit_of_measurement=PERCENTAGE,
+        icon="mdi:cpu-64-bit",
+    ),
+    SensorEntityDescription(
+        key="memory_total",
+        name="Memory Total",
+        native_unit_of_measurement="KB",
+        icon="mdi:memory",
+    ),
+    SensorEntityDescription(
+        key="memory_free",
+        name="Memory Free",
+        native_unit_of_measurement="KB",
+        icon="mdi:memory",
+    ),
+    SensorEntityDescription(
+        key="memory_free_percentage",
+        name="Memory Free Percentage",
+        native_unit_of_measurement=PERCENTAGE,
+        icon="mdi:percent",
+    ),
+    SensorEntityDescription(
+        key="processor_speed",
+        name="Processor Speed",
+        icon="mdi:speedometer",
+    ),
+    SensorEntityDescription(
+        key="bootloader_version",
+        name="Bootloader Version",
+        icon="mdi:chip",
+    ),
 ]
 
 
@@ -207,7 +194,7 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
         system = data.get("system", {})
         dhcp = data.get("dhcp", {})
         host = data.get("host", {})
-        devices = _normalized_hosts(host)
+        devices = normalized_hosts(host)
 
         if key == "uptime":
             return system.get("UpTime")
@@ -240,6 +227,34 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
             return len([x for x in devices if x.get("connection_type") == "wireless"])
         elif key == "connected_active_devices":
             return len([x for x in devices if x.get("active") is True])
+        elif key == "cpu_usage":
+            raw_cpu = _first_defined(system, ("CPUUsage", "CpuUsage", "ProcessorUsage"))
+            cpu = _parse_float(raw_cpu)
+            if cpu is None:
+                return None
+            if isinstance(raw_cpu, (int, float)) and 0 <= cpu <= 1:
+                return round(cpu * 100, 1)
+            return round(cpu, 1)
+        elif key == "memory_total":
+            mem_total = _parse_float(_first_defined(system, ("MemTotal", "MemoryTotal")))
+            if mem_total is None:
+                return None
+            return round(mem_total, 1)
+        elif key == "memory_free":
+            mem_free = _parse_float(_first_defined(system, ("MemFree", "MemoryFree")))
+            if mem_free is None:
+                return None
+            return round(mem_free, 1)
+        elif key == "memory_free_percentage":
+            mem_total = _parse_float(_first_defined(system, ("MemTotal", "MemoryTotal")))
+            mem_free = _parse_float(_first_defined(system, ("MemFree", "MemoryFree")))
+            if not mem_total or mem_total <= 0 or mem_free is None:
+                return None
+            return round((mem_free / mem_total) * 100, 1)
+        elif key == "processor_speed":
+            return _first_defined(system, ("ProcessorSpeed", "CpuSpeed"))
+        elif key == "bootloader_version":
+            return _first_defined(system, ("BootloaderVersion", "BootLoaderVersion"))
         return None
 
     @property
@@ -250,7 +265,7 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
 
         data = self.coordinator.data or {}
         host = data.get("host", {})
-        devices = _normalized_hosts(host)
+        devices = normalized_hosts(host)
 
         return {
             "devices": devices,

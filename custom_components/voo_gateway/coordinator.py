@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -19,6 +20,7 @@ class VooGatewayDataUpdateCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry: ConfigEntry,
         api: VooApi,
         scan_interval: int = 300,
     ):
@@ -26,12 +28,14 @@ class VooGatewayDataUpdateCoordinator(DataUpdateCoordinator):
 
         Args:
             hass: Home Assistant instance
+            entry: Config entry for this integration instance
             api: VOO API client
             scan_interval: Update interval in seconds
         """
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
         )
