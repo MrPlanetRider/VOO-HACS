@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
-from .voo_api import VooApi, VooApiError
+from .voo_api import VooApi
 
 _LOGGER = logging.getLogger(__name__)
 
