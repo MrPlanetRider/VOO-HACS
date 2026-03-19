@@ -126,7 +126,7 @@ class VooGatewayClientTracker(
         # Try hostname first
         if client.get("name"):
             name_str = str(client.get("name")).strip()
-            if name_str:
+            if name_str and name_str.lower() not in {"unknown", "n/a", "none"}:
                 return name_str
         
         # Try IP address
