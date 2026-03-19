@@ -2,10 +2,5 @@
   "name": "VOO Gateway",
   "render_readme": true,
   "content_in_root": false,
-  "domains": [
-    "voo_gateway"
-  ],
-  "homeassistant": "2024.1.0",
-  "iot_class": "local_polling",
-  "version": "1.0.0"
+  "homeassistant": "2024.1.0"
 }
