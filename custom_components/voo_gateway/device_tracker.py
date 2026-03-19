@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.device_tracker import SourceType
@@ -19,6 +20,7 @@ from .coordinator import VooGatewayDataUpdateCoordinator
 from .lan_clients import normalized_clients, stable_client_id
 
 _LOGGER = logging.getLogger(__name__)
+_MAC_LIKE_PATTERN = re.compile(r"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
 
 
 async def async_setup_entry(
@@ -127,7 +129,15 @@ class VooGatewayClientTracker(
         if client.get("name"):
             name_str = str(client.get("name")).strip()
             if name_str and name_str.lower() not in {"unknown", "n/a", "none"}:
-                return name_str
+                # If hostname is just a MAC string, prefer a friendlier label below.
+                if not _MAC_LIKE_PATTERN.match(name_str.lower()):
+                    return name_str
+
+        # Prefer DHCP/static comment when available.
+        if client.get("comment"):
+            comment = str(client.get("comment")).strip()
+            if comment:
+                return comment
         
         # Try IP address
         if client.get("ip_address"):
@@ -219,6 +229,11 @@ class VooGatewayClientTracker(
         if not client:
             return None
         return {
+            "client_id": self.client_id,
+            "name": client.get("name"),
+            "hostname": client.get("name"),
+            "ip_address": client.get("ip_address"),
+            "mac_address": client.get("mac_address"),
             "connection_type": client.get("connection_type"),
             "interface": client.get("interface"),
             "active": client.get("active"),
@@ -248,8 +263,20 @@ class VooGatewayClientTracker(
         info: DeviceInfo = {
             "identifiers": identifiers,
             "name": device_name,
+            "manufacturer": "LAN Client",
+            "model": (
+                f"{str(client.get('connection_type')).title()} Client"
+                if client and client.get("connection_type")
+                else "Network Client"
+            ),
             "via_device": (DOMAIN, self.entry.entry_id),
         }
+        if client and client.get("raw_id"):
+            info["serial_number"] = str(client.get("raw_id"))
+        if client and client.get("comment"):
+            comment = str(client.get("comment")).strip()
+            if comment:
+                info["suggested_area"] = comment
         if connections:
             info["connections"] = connections
         

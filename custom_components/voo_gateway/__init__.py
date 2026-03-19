@@ -128,6 +128,35 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
         )
 
+    if entry.version < 5:
+        ent_reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
+
+        removed_entities = 0
+        for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            if entity_entry.domain == Platform.DEVICE_TRACKER:
+                ent_reg.async_remove(entity_entry.entity_id)
+                removed_entities += 1
+
+        removed_devices = 0
+        for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+            has_tracker_identifier = any(
+                identifier[0] == DOMAIN
+                and str(identifier[1]).startswith(f"{entry.entry_id}_client_")
+                for identifier in device.identifiers
+            )
+            if has_tracker_identifier:
+                dev_reg.async_remove_device(device.id)
+                removed_devices += 1
+
+        hass.config_entries.async_update_entry(entry, version=5)
+        _LOGGER.info(
+            "Tracker naming/details migration removed %d entities and %d devices for entry %s",
+            removed_entities,
+            removed_devices,
+            entry.entry_id,
+        )
+
     _LOGGER.debug("Migration for entry %s completed", entry.entry_id)
     return True
 
