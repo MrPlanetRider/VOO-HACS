@@ -50,7 +50,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 class VooGatewayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for VOO Gateway."""
 
-    VERSION = 6
+    VERSION = 7
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

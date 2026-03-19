@@ -17,6 +17,37 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
+async def _async_cleanup_gateway_only_trackers(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> tuple[int, int]:
+    """Remove all legacy LAN client tracker entities/devices for gateway-only mode."""
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+
+    removed_entities = 0
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        unique_id = entity_entry.unique_id or ""
+        if entity_entry.domain == Platform.DEVICE_TRACKER or unique_id.startswith(
+            f"{entry.entry_id}_client_"
+        ):
+            ent_reg.async_remove(entity_entry.entity_id)
+            removed_entities += 1
+
+    removed_devices = 0
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        has_tracker_identifier = any(
+            identifier[0] == DOMAIN
+            and str(identifier[1]).startswith(f"{entry.entry_id}_client_")
+            for identifier in device.identifiers
+        )
+        if has_tracker_identifier:
+            dev_reg.async_remove_device(device.id)
+            removed_devices += 1
+
+    return removed_entities, removed_devices
+
+
 async def _async_cleanup_legacy_unknown_trackers(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -158,29 +189,25 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     if entry.version < 6:
-        ent_reg = er.async_get(hass)
-        dev_reg = dr.async_get(hass)
-
-        removed_entities = 0
-        for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-            if entity_entry.domain == Platform.DEVICE_TRACKER:
-                ent_reg.async_remove(entity_entry.entity_id)
-                removed_entities += 1
-
-        removed_devices = 0
-        for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
-            has_tracker_identifier = any(
-                identifier[0] == DOMAIN
-                and str(identifier[1]).startswith(f"{entry.entry_id}_client_")
-                for identifier in device.identifiers
-            )
-            if has_tracker_identifier:
-                dev_reg.async_remove_device(device.id)
-                removed_devices += 1
+        removed_entities, removed_devices = await _async_cleanup_gateway_only_trackers(
+            hass, entry
+        )
 
         hass.config_entries.async_update_entry(entry, version=6)
         _LOGGER.info(
             "Gateway-only migration removed %d device_tracker entities and %d tracker devices for entry %s",
+            removed_entities,
+            removed_devices,
+            entry.entry_id,
+        )
+
+    if entry.version < 7:
+        removed_entities, removed_devices = await _async_cleanup_gateway_only_trackers(
+            hass, entry
+        )
+        hass.config_entries.async_update_entry(entry, version=7)
+        _LOGGER.info(
+            "Gateway-only migration v7 removed %d tracker entities and %d tracker devices for entry %s",
             removed_entities,
             removed_devices,
             entry.entry_id,
@@ -198,6 +225,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
 
     _LOGGER.debug("Setting up VOO Gateway at %s", host)
+
+    # Enforce gateway-only behavior on every setup by cleaning legacy trackers.
+    removed_entities, removed_devices = await _async_cleanup_gateway_only_trackers(
+        hass, entry
+    )
+    if removed_entities or removed_devices:
+        _LOGGER.info(
+            "Gateway-only setup cleanup removed %d tracker entities and %d tracker devices",
+            removed_entities,
+            removed_devices,
+        )
 
     # Create API client
     api = VooApi(host, username, password)
