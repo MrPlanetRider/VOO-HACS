@@ -16,6 +16,78 @@ from .coordinator import VooGatewayDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_host_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a host table entry to a stable structure."""
+    host_name = (
+        entry.get("HostName")
+        or entry.get("hostName")
+        or entry.get("Hostname")
+        or "Unknown"
+    )
+    ip_address = (
+        entry.get("IPAddress")
+        or entry.get("ip")
+        or entry.get("IP")
+        or entry.get("ipaddr")
+    )
+    mac_address = (
+        entry.get("MACAddress")
+        or entry.get("mac")
+        or entry.get("MacAddress")
+        or entry.get("PhysAddress")
+    )
+    interface = (
+        entry.get("Interface")
+        or entry.get("associateddevice")
+        or entry.get("AssociatedDevice")
+        or entry.get("connection")
+        or "unknown"
+    )
+    active = entry.get("Active")
+    if isinstance(active, str):
+        active = active.strip().lower() in {"true", "1", "yes", "up", "active"}
+    elif isinstance(active, bool):
+        active = active
+    else:
+        active = None
+
+    interface_str = str(interface).lower()
+    if any(token in interface_str for token in ("wifi", "wlan", "wireless")):
+        connection_type = "wireless"
+    elif any(token in interface_str for token in ("ethernet", "eth", "lan")):
+        connection_type = "wired"
+    else:
+        connection_type = "unknown"
+
+    return {
+        "name": host_name,
+        "ip_address": ip_address,
+        "mac_address": mac_address,
+        "interface": interface,
+        "connection_type": connection_type,
+        "active": active,
+    }
+
+
+def _normalized_hosts(host_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return normalized host list from host API data."""
+    host_tbl = host_data.get("hostTbl", [])
+    if not isinstance(host_tbl, list):
+        return []
+    normalized = [
+        _normalize_host_entry(item)
+        for item in host_tbl
+        if isinstance(item, dict)
+    ]
+    return sorted(
+        normalized,
+        key=lambda x: (
+            str(x.get("name") or "").lower(),
+            str(x.get("ip_address") or ""),
+        ),
+    )
+
+
 SENSOR_DESCRIPTIONS = [
     SensorEntityDescription(
         key="uptime",
@@ -73,6 +145,21 @@ SENSOR_DESCRIPTIONS = [
         name="Connected Devices",
         icon="mdi:network",
     ),
+    SensorEntityDescription(
+        key="connected_wired_devices",
+        name="Connected Wired Devices",
+        icon="mdi:ethernet",
+    ),
+    SensorEntityDescription(
+        key="connected_wireless_devices",
+        name="Connected Wireless Devices",
+        icon="mdi:wifi",
+    ),
+    SensorEntityDescription(
+        key="connected_active_devices",
+        name="Connected Active Devices",
+        icon="mdi:check-network",
+    ),
 ]
 
 
@@ -120,6 +207,7 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
         system = data.get("system", {})
         dhcp = data.get("dhcp", {})
         host = data.get("host", {})
+        devices = _normalized_hosts(host)
 
         if key == "uptime":
             return system.get("UpTime")
@@ -145,11 +233,34 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
                 return ", ".join(dns_list)
             return dns_list
         elif key == "connected_devices":
-            host_tbl = host.get("hostTbl", [])
-            if isinstance(host_tbl, list):
-                return len(host_tbl)
-            return 0
+            return len(devices)
+        elif key == "connected_wired_devices":
+            return len([x for x in devices if x.get("connection_type") == "wired"])
+        elif key == "connected_wireless_devices":
+            return len([x for x in devices if x.get("connection_type") == "wireless"])
+        elif key == "connected_active_devices":
+            return len([x for x in devices if x.get("active") is True])
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes for selected sensors."""
+        if self.entity_description.key != "connected_devices":
+            return None
+
+        data = self.coordinator.data or {}
+        host = data.get("host", {})
+        devices = _normalized_hosts(host)
+
+        return {
+            "devices": devices,
+            "device_count": len(devices),
+            "wired_count": len([x for x in devices if x.get("connection_type") == "wired"]),
+            "wireless_count": len(
+                [x for x in devices if x.get("connection_type") == "wireless"]
+            ),
+            "active_count": len([x for x in devices if x.get("active") is True]),
+        }
 
     @property
     def device_info(self):
