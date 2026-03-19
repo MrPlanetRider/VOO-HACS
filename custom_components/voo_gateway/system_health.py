@@ -8,7 +8,7 @@ from homeassistant.components import system_health
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
-from .lan_clients import normalized_hosts
+from .lan_clients import normalized_clients
 
 
 def _first_defined(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -50,7 +50,7 @@ async def system_health_info(hass: HomeAssistant) -> dict[str, Any]:
     data = coordinator.data or {}
     system = data.get("system", {})
     modem = data.get("modem", {})
-    clients = normalized_hosts(data.get("host", {}))
+    clients = normalized_clients(data.get("host", {}), data.get("dhcp", {}))
 
     info: dict[str, Any] = {
         "configured_entries": len(domain_data),

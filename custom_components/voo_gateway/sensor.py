@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import VooGatewayDataUpdateCoordinator
-from .lan_clients import normalized_hosts
+from .lan_clients import normalized_clients
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
         system = data.get("system", {})
         dhcp = data.get("dhcp", {})
         host = data.get("host", {})
-        devices = normalized_hosts(host)
+        devices = normalized_clients(host, dhcp)
 
         if key == "uptime":
             return system.get("UpTime")
@@ -265,7 +265,8 @@ class VooGatewaySensor(CoordinatorEntity[VooGatewayDataUpdateCoordinator], Senso
 
         data = self.coordinator.data or {}
         host = data.get("host", {})
-        devices = normalized_hosts(host)
+        dhcp = data.get("dhcp", {})
+        devices = normalized_clients(host, dhcp)
 
         return {
             "devices": devices,

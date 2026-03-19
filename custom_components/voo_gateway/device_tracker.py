@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import VooGatewayDataUpdateCoordinator
-from .lan_clients import normalized_hosts, stable_client_id
+from .lan_clients import normalized_clients, stable_client_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ async def async_setup_entry(
     @callback
     def _add_new_client_entities() -> None:
         data = coordinator.data or {}
-        clients = normalized_hosts(data.get("host", {}))
+        clients = normalized_clients(data.get("host", {}), data.get("dhcp", {}))
         _LOGGER.debug(
             "Device tracker discovery: found %d clients from coordinator (entry_id=%s)",
             len(clients),
@@ -148,7 +148,7 @@ class VooGatewayClientTracker(
         """Return latest normalized client data for this tracker."""
         # Try to find in current coordinator data first
         data = self.coordinator.data or {}
-        clients = normalized_hosts(data.get("host", {}))
+        clients = normalized_clients(data.get("host", {}), data.get("dhcp", {}))
         for client in clients:
             if stable_client_id(client) == self.client_id:
                 self._cached_client_data = client
@@ -222,6 +222,8 @@ class VooGatewayClientTracker(
             "connection_type": client.get("connection_type"),
             "interface": client.get("interface"),
             "active": client.get("active"),
+            "comment": client.get("comment"),
+            "raw_id": client.get("raw_id"),
         }
 
     @property

@@ -156,6 +156,8 @@ def normalize_host_entry(entry: dict[str, Any], source_index: int | None = None)
         "interface": interface,
         "connection_type": connection_type,
         "active": active,
+        "comment": _normalize_str(_first_defined(entry, ("Comment", "comment", "Description"))),
+        "raw_id": _normalize_str(_first_defined(entry, ("__id", "id", "ID"))),
         "source_index": source_index,
     }
 
@@ -191,6 +193,69 @@ def normalized_hosts(host_data: dict[str, Any]) -> list[dict[str, Any]]:
         key=lambda x: (
             str(x.get("name") or "").lower(),
             str(x.get("ip_address") or ""),
+            int(x.get("source_index") or 0),
+        ),
+    )
+
+
+def normalized_clients(
+    host_data: dict[str, Any],
+    dhcp_data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return best-effort normalized LAN clients.
+
+    Prefer DHCP StaticTbl (richer HostName/IP/MAC data), and merge runtime host
+    attributes like active/interface when available.
+    """
+    host_clients = normalized_hosts(host_data)
+
+    static_tbl = dhcp_data.get("StaticTbl", [])
+    if not isinstance(static_tbl, list) or len(static_tbl) == 0:
+        return host_clients
+
+    static_clients = [
+        normalize_host_entry(item, source_index=index)
+        for index, item in enumerate(static_tbl)
+        if isinstance(item, dict)
+    ]
+
+    host_by_mac = {
+        str(client.get("mac_address")): client
+        for client in host_clients
+        if client.get("mac_address")
+    }
+    host_by_ip = {
+        str(client.get("ip_address")): client
+        for client in host_clients
+        if client.get("ip_address")
+    }
+
+    merged: list[dict[str, Any]] = []
+    for client in static_clients:
+        mac = client.get("mac_address")
+        ip = client.get("ip_address")
+        host_match = None
+        if mac and str(mac) in host_by_mac:
+            host_match = host_by_mac[str(mac)]
+        elif ip and str(ip) in host_by_ip:
+            host_match = host_by_ip[str(ip)]
+
+        if host_match:
+            if host_match.get("active") is not None:
+                client["active"] = host_match.get("active")
+            if host_match.get("interface") and client.get("interface") == "unknown":
+                client["interface"] = host_match.get("interface")
+            if host_match.get("connection_type") and client.get("connection_type") == "unknown":
+                client["connection_type"] = host_match.get("connection_type")
+
+        merged.append(client)
+
+    return sorted(
+        merged,
+        key=lambda x: (
+            str(x.get("name") or "").lower(),
+            str(x.get("ip_address") or ""),
+            str(x.get("mac_address") or ""),
             int(x.get("source_index") or 0),
         ),
     )
