@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.components.device_tracker import SourceType
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_HOME, STATE_NOT_HOME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -96,6 +97,14 @@ class VooGatewayClientTracker(
     """Tracker entity representing one LAN client from the gateway host table."""
 
     _attr_source_type = SourceType.ROUTER
+
+    @property
+    def source_type(self) -> SourceType:
+        """Return tracker source type.
+
+        Keep explicit for HA compatibility so state computation uses router logic.
+        """
+        return SourceType.ROUTER
 
     def __init__(
         self,
@@ -185,6 +194,15 @@ class VooGatewayClientTracker(
         if isinstance(active, bool):
             return active
         return True
+
+    @property
+    def location_name(self) -> str:
+        """Return deterministic tracker location state.
+
+        Some HA builds can otherwise leave router trackers at unknown if only
+        partial metadata is present.
+        """
+        return STATE_HOME if self.is_connected else STATE_NOT_HOME
 
     @property
     def name(self) -> str:
