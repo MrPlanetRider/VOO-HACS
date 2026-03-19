@@ -81,11 +81,13 @@ class VooGatewayDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Failed to fetch WiFi info: %s", e)
                 data["wifi"] = {}
 
-            # Fetch modem info
+            # Fetch modem info (optional, can be slow/unreliable)
             try:
                 data["modem"] = await self.api.get_modem_info()
             except Exception as e:
-                _LOGGER.warning("Failed to fetch modem info: %s", e)
+                _LOGGER.debug(
+                    "Failed to fetch modem info (non-critical, continuing): %s", e
+                )
                 data["modem"] = {}
 
             return data

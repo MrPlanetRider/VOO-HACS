@@ -147,13 +147,17 @@ class VooApi:
         return digest.hex()
 
     async def _make_request(
-        self, endpoint: str, params: Dict[str, Any] | None = None
+        self,
+        endpoint: str,
+        params: Dict[str, Any] | None = None,
+        timeout: int | None = None,
     ) -> Dict[str, Any]:
         """Make an API request.
 
         Args:
             endpoint: API endpoint path (e.g. "/api/v1/system/ModelName")
             params: Query parameters
+            timeout: Request timeout in seconds (defaults to self.timeout)
 
         Returns:
             Response data dict
@@ -165,12 +169,13 @@ class VooApi:
             raise VooApiError("Not authenticated")
 
         url = f"{self.base_url}{endpoint}"
+        request_timeout = timeout if timeout is not None else self.timeout
 
         try:
             async with self.session.get(
                 url,
                 params=params,
-                timeout=aiohttp.ClientTimeout(self.timeout),
+                timeout=aiohttp.ClientTimeout(request_timeout),
                 headers=self._headers,
             ) as r:
                 if r.status != 200:
@@ -270,7 +275,8 @@ class VooApi:
             Modem info dict
         """
         endpoint = self._build_endpoint("modem", fields)
-        return await self._make_request(endpoint)
+        # Use shorter timeout for modem endpoint (it can be slow/unreliable)
+        return await self._make_request(endpoint, timeout=5)
 
     async def close(self) -> None:
         """Close session."""
