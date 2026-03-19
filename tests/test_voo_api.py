@@ -1,7 +1,7 @@
 """Tests for VOO Gateway API client."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 
 from custom_components.voo_gateway.voo_api import VooApi, VooAuthError, VooApiError
@@ -18,7 +18,7 @@ class TestVooApiAuthentication:
         # Test with known values
         challenge = api._pbkdf2_challenge("password123", "testsalt")
         
-        # Should return 32 character hex string
+        # Should return 32 character hex string (128-bit derived key)
         assert len(challenge) == 32
         assert all(c in "0123456789abcdef" for c in challenge)
 
@@ -56,15 +56,26 @@ class TestVooApiAuthentication:
         auth_cm = MagicMock()
         auth_cm.__aenter__ = AsyncMock(return_value=auth_response)
         auth_cm.__aexit__ = AsyncMock(return_value=None)
+
+        warmup_response = MagicMock()
+        warmup_response.status = 200
+        warmup_response.json = AsyncMock(return_value={"error": "ok"})
+
+        warmup_cm = MagicMock()
+        warmup_cm.__aenter__ = AsyncMock(return_value=warmup_response)
+        warmup_cm.__aexit__ = AsyncMock(return_value=None)
         
         # Set up side effects for POST calls
         post_responses = [challenge_cm, auth_cm]
         mock_session.post = MagicMock(side_effect=post_responses)
+        mock_session.get = MagicMock(side_effect=[warmup_cm, warmup_cm])
         
         # Mock cookie jar
         mock_cookie = MagicMock()
         mock_cookie.value = "csrf_token_123"
-        mock_session.cookie_jar.get = MagicMock(return_value=mock_cookie)
+        mock_session.cookie_jar.filter_cookies = MagicMock(
+            return_value={"auth": mock_cookie}
+        )
         
         await api.authenticate()
         

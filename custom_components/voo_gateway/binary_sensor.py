@@ -1,7 +1,6 @@
 """Binary sensors for VOO Gateway."""
 
 import logging
-from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,

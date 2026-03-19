@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict
 
 import aiohttp
+from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,12 +50,17 @@ class VooApi:
         self._headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
             "X-Requested-With": "XMLHttpRequest",
+            "X-CSRF-TOKEN": "",
+            "Origin": self.base_url,
+            "Referer": f"{self.base_url}/",
         }
 
     async def authenticate(self) -> None:
         """Authenticate with the router using 2-step PBKDF2 challenge."""
         if self.session is None:
-            self.session = aiohttp.ClientSession()
+            # Router is accessed via LAN IP, so allow cookies from IP hosts.
+            cookie_jar = aiohttp.CookieJar(unsafe=True)
+            self.session = aiohttp.ClientSession(cookie_jar=cookie_jar)
 
         try:
             # Step 1: Get challenge salt
@@ -82,7 +88,7 @@ class VooApi:
             challenge = self._pbkdf2_challenge(challenge, salt2)
 
             # Step 3: Submit challenge response
-            data = {"username": "user", "password": challenge}
+            data = {"username": self.username, "password": challenge}
 
             async with self.session.post(
                 url, data=data, timeout=aiohttp.ClientTimeout(self.timeout), headers=self._headers
@@ -95,9 +101,28 @@ class VooApi:
                 raise VooAuthError(f"Authentication failed: {response.get('error')}")
 
             # Extract CSRF token from auth cookie
-            auth_cookie = self.session.cookie_jar.get("auth")
+            auth_cookie = self.session.cookie_jar.filter_cookies(URL(self.base_url)).get("auth")
             if auth_cookie:
                 self._headers["X-CSRF-TOKEN"] = auth_cookie.value
+
+            # Browser flow calls menu/login config immediately after login.
+            # This primes server-side session state before data endpoints.
+            for endpoint in ("/api/v1/session/menu", "/api/v1/login_conf"):
+                warmup_url = f"{self.base_url}{endpoint}"
+                async with self.session.get(
+                    warmup_url,
+                    timeout=aiohttp.ClientTimeout(self.timeout),
+                    headers=self._headers,
+                ) as warmup_response:
+                    if warmup_response.status != 200:
+                        raise VooAuthError(
+                            f"Session warmup failed for {endpoint}: HTTP {warmup_response.status}"
+                        )
+                    warmup_payload = await warmup_response.json()
+                    if warmup_payload.get("error") != "ok":
+                        raise VooAuthError(
+                            f"Session warmup failed for {endpoint}: {warmup_payload.get('error')}"
+                        )
 
             _LOGGER.debug("Successfully authenticated with VOO Gateway")
 
@@ -113,12 +138,12 @@ class VooApi:
             salt: Salt value
 
         Returns:
-            First 32 chars of hex digest
+            32-char hex digest (128-bit key), matching router SJCL output
         """
         bpass = password.encode("utf-8")
         bsalt = salt.encode("utf-8")
-        digest = hashlib.pbkdf2_hmac("sha256", bpass, bsalt, 1000)
-        return digest.hex()[:32]
+        digest = hashlib.pbkdf2_hmac("sha256", bpass, bsalt, 1000, dklen=16)
+        return digest.hex()
 
     async def _make_request(
         self, endpoint: str, params: Dict[str, Any] | None = None
@@ -224,7 +249,13 @@ class VooApi:
             WiFi info dict
         """
         endpoint = self._build_endpoint("wifi", fields)
-        return await self._make_request(endpoint)
+        try:
+            return await self._make_request(endpoint)
+        except VooApiError as err:
+            if str(err) == "HTTP 404":
+                _LOGGER.debug("WiFi endpoint not available on this firmware")
+                return {}
+            raise
 
     async def get_modem_info(self, fields: list[str] | None = None) -> Dict[str, Any]:
         """Get modem information.

@@ -1,3 +1,7 @@
+.venv/
+tests/test_real_device.py
+tests/*local*.py
+tests/*real*.py
 # Ignore patterns
 __pycache__/
 *.py[cod]
@@ -39,4 +43,3 @@ deps/
 home-assistant.log
 
 # Git
-.git*/

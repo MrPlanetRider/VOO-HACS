@@ -1,8 +1,7 @@
 """Tests for VOO Gateway integration coordinator."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.voo_gateway.coordinator import VooGatewayDataUpdateCoordinator
 

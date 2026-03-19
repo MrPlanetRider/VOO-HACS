@@ -61,7 +61,7 @@ class VooGatewayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
-            except vol.Invalid as err:
+            except vol.Invalid:
                 errors["base"] = "invalid_auth"
             except Exception as err:
                 _LOGGER.exception("Unexpected error: %s", err)

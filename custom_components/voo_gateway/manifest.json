@@ -1,19 +1,17 @@
 {
   "domain": "voo_gateway",
   "name": "VOO Gateway",
-  "codeowners": ["@your-github-username"],
+  "codeowners": ["@MrPlanetRider"],
   "config_flow": true,
-  "documentation": "https://github.com/your-github-username/VOO-HACS",
-  "homeassistant": {
-    "min_version": "2024.1.0"
-  },
+  "documentation": "https://github.com/MrPlanetRider/VOO-HACS",
+  "homeassistant": "2024.1.0",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your-github-username/VOO-HACS/issues",
+  "issue_tracker": "https://github.com/MrPlanetRider/VOO-HACS/issues",
   "platforms": [
     "binary_sensor",
     "sensor"
   ],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "1.0.0"
 }
