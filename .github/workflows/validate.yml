@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  HACS Validation:
+  hacs_validation:
+    name: HACS Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,7 +14,8 @@ jobs:
         with:
           category: integration
 
-  Hassfest Validation:
+  hassfest_validation:
+    name: Hassfest Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
